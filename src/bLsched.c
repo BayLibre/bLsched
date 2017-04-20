@@ -501,13 +501,6 @@ static int bLsched(const int sock)
 {
 	int ret;
 	int timeout = interval;
-	struct sigaction usr1_action = {.sa_handler = signal_handler};
-
-	ret = sigaction(SIGUSR1, &usr1_action, 0);
-	if (ret < 0) {
-		fprintf(stderr, "sigaction() failed, %s\n", strerror(errno));
-		return ret;
-	}
 
 	while (1) {
 		struct pollfd fdset[1];
@@ -583,11 +576,28 @@ static void usage(const char *prog)
 	exit(1);
 }
 
+void exit_handler(int sig)
+{
+	switch(sig)
+	{
+	case SIGINT:
+	case SIGTERM:
+		exit(EXIT_SUCCESS);
+		break;
+	default:
+		fprintf(stderr,"Unhandled signal %s", strsignal(sig));
+		break;
+	}
+}
+
 int main(int argc, char * const argv[])
 {
 	int sock;
 	int ret;
 	int cpu;
+
+	struct sigaction usr1_action = {.sa_handler = signal_handler};
+	struct sigaction exit_action = {.sa_handler = exit_handler};
 
 	hash_init(pid_hash);
 
@@ -643,6 +653,24 @@ int main(int argc, char * const argv[])
 	if (ret < 0) {
 		fprintf(stderr, "netlink_listen() failed: %s\n", strerror(ret));
 		goto fail;
+	}
+
+	ret = sigaction(SIGUSR1, &usr1_action, 0);
+	if (ret < 0) {
+		fprintf(stderr, "sigaction() failed, %s\n", strerror(errno));
+		return ret;
+	}
+
+	ret = sigaction(SIGINT, &exit_action, 0);
+	if (ret < 0) {
+		fprintf(stderr, "sigaction() failed, %s\n", strerror(errno));
+		return ret;
+	}
+
+	ret = sigaction(SIGTERM, &exit_action, 0);
+	if (ret < 0) {
+		fprintf(stderr, "sigaction() failed, %s\n", strerror(errno));
+		return ret;
 	}
 
 	return bLsched(sock);
