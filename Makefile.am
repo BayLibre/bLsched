@@ -2,7 +2,7 @@ sbin_PROGRAMS = bLsched
 bLsched_SOURCES = src/bLsched.c
 
 docdir = $(datadir)/doc/@PACKAGE@
-doc_DATA = AUTHORS COPYING NEWS README
+doc_DATA = AUTHORS COPYING NEWS README.md
 
 MAINTAINERCLEANFILES = Makefile.in \
 	aclocal.m4 configure config.h.in config.sub config.guess \
