@@ -547,6 +547,9 @@ static int bLsched(const int sock)
 			if (timeout < 0)
 				timeout = 0;
 		}
+
+		fflush(stdout);
+		fflush(stderr);
 	}
 	return ret;
 }
