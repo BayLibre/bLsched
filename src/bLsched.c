@@ -114,7 +114,7 @@ static int read_proc_file(pid_t pid, const char *field, char *buffer, int size)
 static cpu_set_t big_cpuset;
 static cpu_set_t default_cpuset;
 static int cpu_count;
-static int threshold = 90;
+static int threshold = 80;
 static int interval = 1000;
 static bool new_pid_boost;
 
@@ -570,7 +570,7 @@ static void usage(const char *prog)
 	printf("Usage: %s [-vbtinah]\n", prog);
 	puts("  -v increase verbosity\n"
 	     "  -b add big cpu\n"
-	     "  -t load threshold in % for moving to big cpu (default 90)\n"
+	     "  -t load threshold in % for moving to big cpu (default 80)\n"
 	     "  -i interval in ms for monitoring load avg. (default 1000)\n"
 	     "  -n new pid boost\n"
 	     "  -a add existing pid's\n"
