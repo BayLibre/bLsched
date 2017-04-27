@@ -190,13 +190,10 @@ static void pid_del(struct pid_info *info)
 static void pid_remove(pid_t pid)
 {
 	struct pid_info *info;
-	struct hlist_node *next;
 
-	hash_for_each_possible_safe(pid_hash, info, next, hentry, pid) {
-		if (info->pid == pid) {
-			pid_del(info);
-		}
-	}
+	info = pid_find(pid);
+	if (info)
+		pid_del(info);
 }
 
 static void pid_iterate(void (func)(struct pid_info *))
