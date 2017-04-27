@@ -385,7 +385,6 @@ static int netlink_recv(const int sock)
 
 		struct cn_msg *cn_msg;
 		struct proc_event *proc_ev;
-		struct pid_info *info = NULL;
 
 		if ((nlmsghdr->nlmsg_type == NLMSG_ERROR) ||
 			(nlmsghdr->nlmsg_type == NLMSG_NOOP))
@@ -401,11 +400,11 @@ static int netlink_recv(const int sock)
 		switch (proc_ev->what) {
 		case PROC_EVENT_FORK:
 			vv_printf("PROC_EVENT_FORK: %d->%d\n", proc_ev->event_data.fork.parent_pid,proc_ev->event_data.fork.child_pid);
-			info = pid_add(proc_ev->event_data.fork.child_pid);
+			pid_add(proc_ev->event_data.fork.child_pid);
 			break;
 		case PROC_EVENT_EXEC:
 			vv_printf("PROC_EVENT_EXEC: %d\n", proc_ev->event_data.exec.process_pid);
-			info  = pid_add(proc_ev->event_data.exec.process_pid);
+			pid_add(proc_ev->event_data.exec.process_pid);
 			break;
 		case PROC_EVENT_COMM:
 			vv_printf("PROC_EVENT_COMM: %d %s\n", proc_ev->event_data.comm.process_pid, proc_ev->event_data.comm.comm);
