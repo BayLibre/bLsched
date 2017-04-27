@@ -116,6 +116,81 @@ static int cpu_count;
 static int threshold = 80;
 static int interval = 1000;
 
+HLIST_HEAD(bound_list);
+
+struct comm_bound {
+	struct hlist_node hentry;
+	char comm[16+1];
+	bool in_big_cpuset;
+};
+
+static struct comm_bound *comm_find(const char *comm)
+{
+	struct comm_bound *bound = NULL;
+
+	hlist_for_each_entry(bound, &bound_list, hentry) {
+		if (!strncmp(bound->comm, comm, sizeof(bound->comm)-1))
+			break;
+	}
+	return bound;
+}
+
+static struct comm_bound *comm_add(const char *comm, bool in_big_cpuset)
+{
+	struct comm_bound *bound;
+
+	if (!comm || !*comm)
+		return NULL;
+
+	bound = comm_find(comm);
+	if (bound) {
+		return bound;
+	}
+
+	bound = calloc(1, sizeof(*bound));
+	if (!bound) {
+		fprintf(stderr, "calloc(%lu) failed\n", sizeof(*bound));
+		return NULL;
+	}
+
+	strncpy(bound->comm, comm, sizeof(bound->comm)-1);
+	bound->in_big_cpuset = in_big_cpuset;
+
+	hlist_add_head(&bound->hentry, &bound_list);
+	vv_printf("%s bound to %s\n", bound->comm, bound->in_big_cpuset ? "big" : "LITTLE");
+
+	return bound;
+}
+
+static void comms_add(const char *fname, bool in_big_cpuset)
+{
+	int len;
+	int fd;
+	char buffer[4096];
+	const char *s;
+	const char *delim = "\n\r\t,; ";
+
+	fd = open(fname, O_RDONLY);
+	if (fd < 0) {
+		comm_add(fname, in_big_cpuset); /* assume it is a task name */
+		return;
+	}
+
+	len = read(fd, buffer, sizeof(buffer)-1);
+	close(fd);
+	if (len <= 0) {
+		fprintf(stderr, "read(%s) failed: %s\n", fname, strerror(errno));
+		return;
+	}
+	buffer[len] = 0;
+
+	s = strtok(buffer, delim);
+	while (s) {
+		comm_add(s, in_big_cpuset);
+		s = strtok(NULL, delim);
+	}
+}
+
 DECLARE_HASHTABLE(pid_hash, 9);
 
 struct pid_info {
@@ -126,6 +201,8 @@ struct pid_info {
 	int64_t last_update_time;
 	int threshold;
 	int in_big_cpuset;
+	bool bound_to_big;
+	bool bound_to_little;
 };
 
 static struct pid_info *pid_find(pid_t pid)
@@ -144,13 +221,14 @@ static struct pid_info *pid_add(pid_t pid)
 	struct pid_info *info;
 	char buffer[4096];
 	int len;
+	struct comm_bound *bound;
 
 	if (getpgid(pid) == 0) {
 		vv_printf("PID %d kernel thread\n", pid);
 		return NULL;
 	}
 	if (!is_pid_valid(pid)) {
-		v_printf("PID %d not valid\n", pid);
+		v_printf("PID %d not valid (add)\n", pid);
 		return NULL;
 	}
 
@@ -175,6 +253,20 @@ static struct pid_info *pid_add(pid_t pid)
 	hash_add(pid_hash, &info->hentry, (uint32_t)pid);
 	vv_printf("%5d: %s added\n", pid, info->comm);
 
+	bound = comm_find(info->comm);
+	if (bound) {
+		info->bound_to_big = bound->in_big_cpuset;
+		info->bound_to_little = !bound->in_big_cpuset;
+		if (bound->in_big_cpuset) {
+			sched_setaffinity(info->pid, sizeof(big_cpuset), &big_cpuset);
+			info->in_big_cpuset = 1;
+		} else {
+			static cpu_set_t little_cpuset;
+			CPU_XOR(&little_cpuset, &big_cpuset, &default_cpuset); /* remove big CPU's from default set */
+			sched_setaffinity(info->pid, sizeof(little_cpuset), &little_cpuset);
+		}
+		v_printf("%5d: %s bound to %s\n", info->pid, info->comm, info->bound_to_big ? "big" : "LITTLE");
+	}
 	return info;
 }
 
@@ -457,6 +549,9 @@ static void load_avg_monitor(struct pid_info *info)
 		return;
 	}
 
+	if (info->bound_to_big || info->bound_to_little)
+		return;
+
 	len = read_proc_file(info->pid, "sched", buffer, sizeof(buffer));
 	if (len > 0) {
 		int64_t tmp = get_last_update_time(buffer);
@@ -568,6 +663,8 @@ static void usage(const char *prog)
 	     "  -i interval in ms for monitoring load avg. (default 1000)\n"
 	     "  -a add existing pid's\n"
 	     "  -l LITTLE cpuset default\n"
+	     "  -B bind these tasks to big cpuset\n"
+	     "  -L bind these tasks to LITTLE cpuset\n"
 	     "  -h help\n");
 	exit(1);
 }
@@ -603,7 +700,7 @@ int main(int argc, char * const argv[])
 	cpu_count = CPU_COUNT(&default_cpuset);
 
 	for (;;) {
-		int c = getopt(argc, argv, "vb:t:i:al");
+		int c = getopt(argc, argv, "vb:t:i:alB:L:");
 		if (c == -1)
 			break;
 		switch (c) {
@@ -625,6 +722,12 @@ int main(int argc, char * const argv[])
 			break;
 		case 'l':
 			CPU_XOR(&default_cpuset, &big_cpuset, &default_cpuset); /* remove big CPU's from default set */
+			break;
+		case 'B':
+			comms_add(optarg, true);
+			break;
+		case 'L':
+			comms_add(optarg, false);
 			break;
 		case 'h':
 		case '?':
