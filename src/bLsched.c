@@ -116,7 +116,6 @@ static cpu_set_t default_cpuset;
 static int cpu_count;
 static int threshold = 80;
 static int interval = 1000;
-static bool new_pid_boost;
 
 DECLARE_HASHTABLE(pid_hash, 9);
 
@@ -326,13 +325,6 @@ static int netlink_recv(const int sock)
 			break;
 		default:
 			break;
-		}
-
-		if (info) {
-			if (new_pid_boost) {
-				info->in_big_cpuset = 1;
-				sched_setaffinity(info->pid, sizeof(big_cpuset), &big_cpuset);
-			}
 		}
 	}
 	return 0;
@@ -575,7 +567,6 @@ static void usage(const char *prog)
 	     "  -b add big cpu\n"
 	     "  -t load threshold in % for moving to big cpu (default 80)\n"
 	     "  -i interval in ms for monitoring load avg. (default 1000)\n"
-	     "  -n new pid boost\n"
 	     "  -a add existing pid's\n"
 	     "  -l LITTLE cpuset default\n"
 	     "  -h help\n");
@@ -613,7 +604,7 @@ int main(int argc, char * const argv[])
 	cpu_count = CPU_COUNT(&default_cpuset);
 
 	for (;;) {
-		int c = getopt(argc, argv, "vb:t:i:nal");
+		int c = getopt(argc, argv, "vb:t:i:al");
 		if (c == -1)
 			break;
 		switch (c) {
@@ -629,9 +620,6 @@ int main(int argc, char * const argv[])
 			break;
 		case 'i':
 			interval = atoi(optarg);
-			break;
-		case 'n':
-			new_pid_boost = true;
 			break;
 		case 'a':
 			add_existing_pids();
