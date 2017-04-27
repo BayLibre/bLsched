@@ -86,28 +86,27 @@ static int read_proc_file(pid_t pid, const char *field, char *buffer, int size)
 {
 	char fname[PATH_MAX];
 	int len;
-	int fp;
+	int fd;
 
 	if (pid)
 		snprintf(fname, sizeof(fname), "/proc/%d/%s", pid, field);
 	else
 		snprintf(fname, sizeof(fname), "/proc/%s", field);
 
-	fp = open(fname, O_RDONLY);
-	if (!fp) {
+	fd = open(fname, O_RDONLY);
+	if (fd < 0) {
 		fprintf(stderr, "open(%s) failed: %s\n", fname, strerror(errno));
 		return -1;
 	}
 
-	len = read(fp, buffer, size);
+	len = read(fd, buffer, size);
+	close(fd);
 	if (len <= 0) {
 		fprintf(stderr, "read(%s) failed: %s\n", fname, strerror(errno));
-		close(fp);
 		return -1;
 	}
 	buffer[len-1] = 0; /* remove trailing '\n' */
 
-	close(fp);
 	return len;
 }
 
