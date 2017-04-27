@@ -180,6 +180,13 @@ static struct pid_info *pid_add(pid_t pid)
 	return info;
 }
 
+static void pid_del(struct pid_info *info)
+{
+	hash_del(&info->hentry);
+	vv_printf("%5d %16s: removed\n", info->pid, info->comm);
+	free(info);
+}
+
 static void pid_remove(pid_t pid)
 {
 	struct pid_info *info;
@@ -187,9 +194,7 @@ static void pid_remove(pid_t pid)
 
 	hash_for_each_possible_safe(pid_hash, info, next, hentry, pid) {
 		if (info->pid == pid) {
-			hash_del(&info->hentry);
-			vv_printf("%5d %16s: removed\n", pid, info->comm);
-			free(info);
+			pid_del(info);
 		}
 	}
 }
@@ -198,8 +203,9 @@ static void pid_iterate(void (func)(struct pid_info *))
 {
 	struct pid_info *info;
 	int bkt;
+	struct hlist_node *next;
 
-	hash_for_each(pid_hash, bkt, info, hentry) {
+	hash_for_each_safe(pid_hash, bkt, next, info, hentry) {
 		if (func) {
 			func(info);
 		}
@@ -459,7 +465,7 @@ static void load_avg_monitor(struct pid_info *info)
 
 	if (!is_pid_valid(info->pid)) {
 		v_printf("PID %d not valid\n", info->pid);
-		pid_remove(info->pid);
+		pid_del(info);
 		return;
 	}
 
