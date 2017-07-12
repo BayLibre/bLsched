@@ -116,6 +116,7 @@ static int cpu_count;
 static int up_threshold = 80;
 static int down_threshold = 20;
 static int interval = 1000;
+static int min_time = 3000;
 
 HLIST_HEAD(bound_list);
 
@@ -202,7 +203,7 @@ struct pid_info {
 	int64_t last_update_time;
 	int up_threshold;
 	int down_threshold;
-	int in_big_cpuset;
+	int time_left;
 	bool bound_to_big;
 	bool bound_to_little;
 };
@@ -262,7 +263,6 @@ static struct pid_info *pid_add(pid_t pid)
 		info->bound_to_little = !bound->in_big_cpuset;
 		if (bound->in_big_cpuset) {
 			sched_setaffinity(info->pid, sizeof(big_cpuset), &big_cpuset);
-			info->in_big_cpuset = 1;
 		} else {
 			static cpu_set_t little_cpuset;
 			CPU_XOR(&little_cpuset, &big_cpuset, &default_cpuset); /* remove big CPU's from default set */
@@ -425,8 +425,10 @@ static int netlink_recv(const int sock)
 
 static void show_big_tasks(struct pid_info *info)
 {
-	if (info->in_big_cpuset)
-		printf("%5d %16s: %dms\n", info->pid, info->comm, info->in_big_cpuset * interval);
+	if (info->time_left)
+		printf("%5d %16s: %dms\n", info->pid, info->comm, info->time_left * interval);
+	else if (info->bound_to_big)
+		printf("%5d %16s: bound\n", info->pid, info->comm);
 }
 
 #define MAX_CPUS 8
@@ -571,24 +573,24 @@ static void load_avg_monitor(struct pid_info *info)
 		else
 			vv_printf("%5d %16s: load_avg %ld\n", info->pid, info->comm, info->load_avg);
 
-		if (info->in_big_cpuset)
-			v_printf("%5d %16s: in big, left %dms\n", info->pid, info->comm, info->in_big_cpuset * interval);
+		if (info->time_left)
+			v_printf("%5d %16s: in big, left %dms\n", info->pid, info->comm, info->time_left * interval);
 
 		if (!CPU_COUNT(&big_cpuset))
 			return;
 
 		if (info->load_avg > info->up_threshold) {
-			if (!info->in_big_cpuset) {
+			if (!info->time_left) {
 				if (big_has_capacity(info->load_avg)) {
 					v_printf("%5d %16s: move to big\n", info->pid, info->comm);
 					sched_setaffinity(info->pid, sizeof(big_cpuset), &big_cpuset);
-					info->in_big_cpuset = 3;
+					info->time_left = min_time / interval;
 				} else {
 					v_printf("%5d %16s: big no capacity\n", info->pid, info->comm);
 				}
 			}
 		} else if (info->load_avg < info->down_threshold) {
-			if (info->in_big_cpuset && !--info->in_big_cpuset) {
+			if (info->time_left && !--info->time_left) {
 				v_printf("%5d %16s: remove from big\n", info->pid, info->comm);
 				sched_setaffinity(info->pid, sizeof(default_cpuset), &default_cpuset);
 			}
@@ -672,6 +674,7 @@ static void usage(const char *prog)
 	     "  -u up threshold in % for moving to big cpu (default 80)\n"
 	     "  -d down threshold in % for moving to LITTLE cpu (default 20)\n"
 	     "  -i interval in ms for monitoring load avg. (default 1000)\n"
+	     "  -m minimum time in ms for staying on the big cpu (default 3000)\n"
 	     "  -a add existing pid's\n"
 	     "  -l LITTLE cpuset default\n"
 	     "  -B bind these tasks to big cpuset\n"
@@ -711,7 +714,7 @@ int main(int argc, char * const argv[])
 	cpu_count = CPU_COUNT(&default_cpuset);
 
 	for (;;) {
-		int c = getopt(argc, argv, "vb:u:d:i:alB:L:");
+		int c = getopt(argc, argv, "vb:u:d:i:m:alB:L:");
 		if (c == -1)
 			break;
 		switch (c) {
@@ -730,6 +733,9 @@ int main(int argc, char * const argv[])
 			break;
 		case 'i':
 			interval = atoi(optarg);
+			break;
+		case 'm':
+			min_time = atoi(optarg);
 			break;
 		case 'a':
 			add_existing_pids();
