@@ -113,7 +113,8 @@ static int read_proc_file(pid_t pid, const char *field, char *buffer, int size)
 static cpu_set_t big_cpuset;
 static cpu_set_t default_cpuset;
 static int cpu_count;
-static int threshold = 80;
+static int up_threshold = 80;
+static int down_threshold = 20;
 static int interval = 1000;
 
 HLIST_HEAD(bound_list);
@@ -199,7 +200,8 @@ struct pid_info {
 	char comm[16+1];
 	int64_t load_avg;
 	int64_t last_update_time;
-	int threshold;
+	int up_threshold;
+	int down_threshold;
 	int in_big_cpuset;
 	bool bound_to_big;
 	bool bound_to_little;
@@ -248,7 +250,8 @@ static struct pid_info *pid_add(pid_t pid)
 	if (len > 0) {
 		strncpy(info->comm, buffer, sizeof(info->comm)-1);
 	}
-	info->threshold = (threshold * 1024) / 100;
+	info->up_threshold = (up_threshold * 1024) / 100;
+	info->down_threshold = (down_threshold * 1024) / 100;
 
 	hash_add(pid_hash, &info->hentry, (uint32_t)pid);
 	vv_printf("%5d: %s added\n", pid, info->comm);
@@ -497,7 +500,7 @@ static void get_big_total_capacity(void)
 
 	for (cpu = 0; cpu < cpu_count; cpu++) {
 		if (CPU_ISSET(cpu, &big_cpuset)) {
-			if (cpu_load[cpu] < (100 - threshold)) {
+			if (cpu_load[cpu] < (100 - up_threshold)) {
 				big_total_capacity += 1023;
 			}
 		}
@@ -568,7 +571,7 @@ static void load_avg_monitor(struct pid_info *info)
 		if (!CPU_COUNT(&big_cpuset))
 			return;
 
-		if (info->load_avg > info->threshold) {
+		if (info->load_avg > info->up_threshold) {
 			if (!info->in_big_cpuset) {
 				if (big_has_capacity(info->load_avg)) {
 					v_printf("%5d %16s: move to big\n", info->pid, info->comm);
@@ -578,7 +581,7 @@ static void load_avg_monitor(struct pid_info *info)
 					v_printf("%5d %16s: big no capacity\n", info->pid, info->comm);
 				}
 			}
-		} else {
+		} else if (info->load_avg < info->down_threshold) {
 			if (info->in_big_cpuset && !--info->in_big_cpuset) {
 				v_printf("%5d %16s: remove from big\n", info->pid, info->comm);
 				sched_setaffinity(info->pid, sizeof(default_cpuset), &default_cpuset);
@@ -657,10 +660,11 @@ static void add_existing_pids(void)
 
 static void usage(const char *prog)
 {
-	printf("Usage: %s [-vbtinah]\n", prog);
+	printf("Usage: %s\n", prog);
 	puts("  -v increase verbosity\n"
 	     "  -b add big cpu\n"
-	     "  -t load threshold in % for moving to big cpu (default 80)\n"
+	     "  -u up threshold in % for moving to big cpu (default 80)\n"
+	     "  -d down threshold in % for moving to LITTLE cpu (default 20)\n"
 	     "  -i interval in ms for monitoring load avg. (default 1000)\n"
 	     "  -a add existing pid's\n"
 	     "  -l LITTLE cpuset default\n"
@@ -701,7 +705,7 @@ int main(int argc, char * const argv[])
 	cpu_count = CPU_COUNT(&default_cpuset);
 
 	for (;;) {
-		int c = getopt(argc, argv, "vb:t:i:alB:L:");
+		int c = getopt(argc, argv, "vb:u:d:i:alB:L:");
 		if (c == -1)
 			break;
 		switch (c) {
@@ -712,8 +716,11 @@ int main(int argc, char * const argv[])
 			cpu = atoi(optarg);
 			CPU_SET(cpu, &big_cpuset);
 			break;
-		case 't':
-			threshold = atoi(optarg);
+		case 'u':
+			up_threshold = atoi(optarg);
+			break;
+		case 'd':
+			down_threshold = atoi(optarg);
 			break;
 		case 'i':
 			interval = atoi(optarg);
@@ -738,7 +745,7 @@ int main(int argc, char * const argv[])
 		}
 	}
 
-	v_printf("big cpus %d/%d, threshold %d%%\n", CPU_COUNT(&big_cpuset), CPU_COUNT(&default_cpuset), threshold);
+	v_printf("big cpus %d/%d, up/down threshold %d%%/%d%%\n", CPU_COUNT(&big_cpuset), CPU_COUNT(&default_cpuset), up_threshold, down_threshold);
 
 	ret = sock = netlink_connect();
 	if (ret < 0) {
