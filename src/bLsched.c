@@ -268,7 +268,7 @@ static struct pid_info *pid_add(pid_t pid)
 			CPU_XOR(&little_cpuset, &big_cpuset, &default_cpuset); /* remove big CPU's from default set */
 			sched_setaffinity(info->pid, sizeof(little_cpuset), &little_cpuset);
 		}
-		v_printf("%5d: %s bound to %s\n", info->pid, info->comm, info->bound_to_big ? "big" : "LITTLE");
+		vv_printf("%5d: %s bound to %s\n", info->pid, info->comm, info->bound_to_big ? "big" : "LITTLE");
 	}
 	return info;
 }
@@ -566,7 +566,13 @@ static void load_avg_monitor(struct pid_info *info)
 			info->load_avg = 0;
 		}
 
-		vv_printf("%5d %16s: load_avg %ld, left %dms\n", info->pid, info->comm, info->load_avg, info->in_big_cpuset * interval);
+		if (info->load_avg)
+			v_printf("%5d %16s: load_avg %ld\n", info->pid, info->comm, info->load_avg);
+		else
+			vv_printf("%5d %16s: load_avg %ld\n", info->pid, info->comm, info->load_avg);
+
+		if (info->in_big_cpuset)
+			v_printf("%5d %16s: in big, left %dms\n", info->pid, info->comm, info->in_big_cpuset * interval);
 
 		if (!CPU_COUNT(&big_cpuset))
 			return;
