@@ -500,9 +500,9 @@ static void get_big_total_capacity(void)
 
 	for (cpu = 0; cpu < cpu_count; cpu++) {
 		if (CPU_ISSET(cpu, &big_cpuset)) {
-			if (cpu_load[cpu] < (100 - up_threshold)) {
-				big_total_capacity += 1023;
-			}
+			int capacity = (100 - cpu_load[cpu])*1024;
+			capacity = (capacity*3)/2; /* assume the big has 50% more capacity than the LITTLE cpu */
+			big_total_capacity += capacity;
 		}
 	}
 }
