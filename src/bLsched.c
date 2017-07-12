@@ -557,6 +557,8 @@ static void load_avg_monitor(struct pid_info *info)
 		if (tmp != info->last_update_time) {
 			info->last_update_time = tmp;
 			info->load_avg = get_load_avg(buffer);
+			if (info->load_avg > 1024) /* may happen for high priority tasks */
+				info->load_avg = 1024;
 		} else {
 			info->load_avg = 0;
 		}
