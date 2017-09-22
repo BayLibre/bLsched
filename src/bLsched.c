@@ -518,28 +518,16 @@ static bool big_has_capacity(int load_avg)
 		return false;
 }
 
-static int64_t get_last_update_time(const char *buffer)
+static int64_t get_field(const char *buffer, const char *field)
 {
-	int64_t last_update_time = -1;
-	const char *s = strstr(buffer, "se.avg.last_update_time");
+	int64_t value = -1;
+	const char *s = strstr(buffer, field);
 	if (!s) {
-		fprintf(stderr, "%s not found\n", "se.avg.last_update_time");
+		fprintf(stderr, "%s not found\n", field);
 		return -1;
 	}
-	sscanf(s, "%*[^0-9]%ld", &last_update_time);
-	return last_update_time;
-}
-
-static int64_t get_load_avg(const char *buffer)
-{
-	int64_t load_avg = -1;
-	const char *s = strstr(buffer, "se.avg.load_avg");
-	if (!s) {
-		fprintf(stderr, "%s not found\n", "se.avg.load_avg");
-		return -1;
-	}
-	sscanf(s, "%*[^0-9]%ld", &load_avg);
-	return load_avg;
+	sscanf(s, "%*[^0-9]%ld", &value);
+	return value;
 }
 
 static void load_avg_monitor(struct pid_info *info)
@@ -558,10 +546,10 @@ static void load_avg_monitor(struct pid_info *info)
 
 	len = read_proc_file(info->pid, "sched", buffer, sizeof(buffer));
 	if (len > 0) {
-		int64_t tmp = get_last_update_time(buffer);
+		int64_t tmp = get_field(buffer, "se.avg.last_update_time");
 		if (tmp != info->last_update_time) {
 			info->last_update_time = tmp;
-			info->load_avg = get_load_avg(buffer);
+			info->load_avg = get_field(buffer, "se.avg.load_avg");
 			if (info->load_avg > 1024) /* may happen for high priority tasks */
 				info->load_avg = 1024;
 		} else {
