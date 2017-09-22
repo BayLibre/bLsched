@@ -534,6 +534,7 @@ static void load_avg_monitor(struct pid_info *info)
 {
 	char buffer[4096];
 	int len;
+	int64_t value;
 
 	if (!is_pid_valid(info->pid)) {
 		v_printf("PID %d not valid\n", info->pid);
@@ -545,43 +546,44 @@ static void load_avg_monitor(struct pid_info *info)
 		return;
 
 	len = read_proc_file(info->pid, "sched", buffer, sizeof(buffer));
-	if (len > 0) {
-		int64_t tmp = get_field(buffer, "se.avg.last_update_time");
-		if (tmp != info->last_update_time) {
-			info->last_update_time = tmp;
-			info->load_avg = get_field(buffer, "se.avg.load_avg");
-			if (info->load_avg > 1024) /* may happen for high priority tasks */
-				info->load_avg = 1024;
-		} else {
-			info->load_avg = 0;
+	if (len <= 0)
+		return;
+
+	value = get_field(buffer, "se.avg.last_update_time");
+	if (value != info->last_update_time) {
+		info->last_update_time = value;
+		info->load_avg = get_field(buffer, "se.avg.load_avg");
+		if (info->load_avg > 1024) /* may happen for high priority tasks */
+			info->load_avg = 1024;
+	} else {
+		info->load_avg = 0;
+	}
+
+	if (info->load_avg)
+		v_printf("%5d %16s: load_avg %ld\n", info->pid, info->comm, info->load_avg);
+	else
+		vv_printf("%5d %16s: load_avg %ld\n", info->pid, info->comm, info->load_avg);
+
+	if (info->time_left)
+		v_printf("%5d %16s: in big, left %dms\n", info->pid, info->comm, info->time_left * interval);
+
+	if (!CPU_COUNT(&big_cpuset))
+		return;
+
+	if (info->load_avg > info->up_threshold) {
+		if (!info->time_left) {
+			if (big_has_capacity(info->load_avg)) {
+				v_printf("%5d %16s: move to big\n", info->pid, info->comm);
+				sched_setaffinity(info->pid, sizeof(big_cpuset), &big_cpuset);
+				info->time_left = min_time / interval;
+			} else {
+				v_printf("%5d %16s: big no capacity\n", info->pid, info->comm);
+			}
 		}
-
-		if (info->load_avg)
-			v_printf("%5d %16s: load_avg %ld\n", info->pid, info->comm, info->load_avg);
-		else
-			vv_printf("%5d %16s: load_avg %ld\n", info->pid, info->comm, info->load_avg);
-
-		if (info->time_left)
-			v_printf("%5d %16s: in big, left %dms\n", info->pid, info->comm, info->time_left * interval);
-
-		if (!CPU_COUNT(&big_cpuset))
-			return;
-
-		if (info->load_avg > info->up_threshold) {
-			if (!info->time_left) {
-				if (big_has_capacity(info->load_avg)) {
-					v_printf("%5d %16s: move to big\n", info->pid, info->comm);
-					sched_setaffinity(info->pid, sizeof(big_cpuset), &big_cpuset);
-					info->time_left = min_time / interval;
-				} else {
-					v_printf("%5d %16s: big no capacity\n", info->pid, info->comm);
-				}
-			}
-		} else if (info->load_avg < info->down_threshold) {
-			if (info->time_left && !--info->time_left) {
-				v_printf("%5d %16s: remove from big\n", info->pid, info->comm);
-				sched_setaffinity(info->pid, sizeof(default_cpuset), &default_cpuset);
-			}
+	} else if (info->load_avg < info->down_threshold) {
+		if (info->time_left && !--info->time_left) {
+			v_printf("%5d %16s: remove from big\n", info->pid, info->comm);
+			sched_setaffinity(info->pid, sizeof(default_cpuset), &default_cpuset);
 		}
 	}
 }
