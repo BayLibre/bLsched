@@ -549,6 +549,13 @@ static void load_avg_monitor(struct pid_info *info)
 	if (len <= 0)
 		return;
 
+	/* ignore non-CFS tasks, since  'load_avg' never updated for these tasks */
+	value = get_field(buffer, "policy");
+	if (value != SCHED_OTHER) {
+		vv_printf("%5d %16s: policy %ld, ignore\n", info->pid, info->comm, value);
+		return;
+	}
+
 	value = get_field(buffer, "se.avg.last_update_time");
 	if (value != info->last_update_time) {
 		info->last_update_time = value;
