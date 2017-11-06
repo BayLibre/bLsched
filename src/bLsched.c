@@ -199,7 +199,7 @@ struct pid_info {
 	struct hlist_node hentry;
 	pid_t pid;
 	char comm[16+1];
-	int64_t load_avg;
+	int64_t util_avg;
 	int64_t last_update_time;
 	int up_threshold;
 	int down_threshold;
@@ -509,10 +509,10 @@ static void get_big_total_capacity(void)
 	}
 }
 
-static bool big_has_capacity(int load_avg)
+static bool big_has_capacity(int util_avg)
 {
-	if (big_total_capacity >= load_avg) {
-		big_total_capacity -= load_avg;
+	if (big_total_capacity >= util_avg) {
+		big_total_capacity -= util_avg;
 		return true;
 	} else
 		return false;
@@ -530,7 +530,7 @@ static int64_t get_field(const char *buffer, const char *field)
 	return value;
 }
 
-static void load_avg_monitor(struct pid_info *info)
+static void util_avg_monitor(struct pid_info *info)
 {
 	char buffer[4096];
 	int len;
@@ -549,7 +549,7 @@ static void load_avg_monitor(struct pid_info *info)
 	if (len <= 0)
 		return;
 
-	/* ignore non-CFS tasks, since  'load_avg' never updated for these tasks */
+	/* ignore non-CFS tasks, since  'util_avg' never updated for these tasks */
 	value = get_field(buffer, "policy");
 	if (value != SCHED_OTHER) {
 		vv_printf("%5d %16s: policy %ld, ignore\n", info->pid, info->comm, value);
@@ -559,17 +559,17 @@ static void load_avg_monitor(struct pid_info *info)
 	value = get_field(buffer, "se.avg.last_update_time");
 	if (value != info->last_update_time) {
 		info->last_update_time = value;
-		info->load_avg = get_field(buffer, "se.avg.load_avg");
-		if (info->load_avg > 1024) /* may happen for high priority tasks */
-			info->load_avg = 1024;
+		info->util_avg = get_field(buffer, "se.avg.util_avg");
+		if (info->util_avg > 1024) /* may happen for high priority tasks */
+			info->util_avg = 1024;
 	} else {
-		info->load_avg = 0;
+		info->util_avg = 0;
 	}
 
-	if (info->load_avg)
-		v_printf("%5d %16s: load_avg %ld\n", info->pid, info->comm, info->load_avg);
+	if (info->util_avg)
+		v_printf("%5d %16s: util_avg %ld\n", info->pid, info->comm, info->util_avg);
 	else
-		vv_printf("%5d %16s: load_avg %ld\n", info->pid, info->comm, info->load_avg);
+		vv_printf("%5d %16s: util_avg %ld\n", info->pid, info->comm, info->util_avg);
 
 	if (info->time_left)
 		v_printf("%5d %16s: in big, left %dms\n", info->pid, info->comm, info->time_left * interval);
@@ -577,9 +577,9 @@ static void load_avg_monitor(struct pid_info *info)
 	if (!CPU_COUNT(&big_cpuset))
 		return;
 
-	if (info->load_avg > info->up_threshold) {
+	if (info->util_avg > info->up_threshold) {
 		if (!info->time_left) {
-			if (big_has_capacity(info->load_avg)) {
+			if (big_has_capacity(info->util_avg)) {
 				v_printf("%5d %16s: move to big\n", info->pid, info->comm);
 				sched_setaffinity(info->pid, sizeof(big_cpuset), &big_cpuset);
 				info->time_left = min_time / interval;
@@ -587,7 +587,7 @@ static void load_avg_monitor(struct pid_info *info)
 				v_printf("%5d %16s: big no capacity\n", info->pid, info->comm);
 			}
 		}
-	} else if (info->load_avg < info->down_threshold) {
+	} else if (info->util_avg < info->down_threshold) {
 		if (info->time_left && !--info->time_left) {
 			v_printf("%5d %16s: remove from big\n", info->pid, info->comm);
 			sched_setaffinity(info->pid, sizeof(default_cpuset), &default_cpuset);
@@ -633,7 +633,7 @@ static int bLsched(const int sock)
 			vv_printf("Timeout\n");
 			get_cpu_loads();
 			get_big_total_capacity();
-			pid_iterate(load_avg_monitor);
+			pid_iterate(util_avg_monitor);
 			timeout = interval;
 		} else {
 			ret = netlink_recv(sock);
