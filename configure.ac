@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([bLsched], [0.1.0], [fisaksen@baylibre.com])
+AC_INIT([blsched], [0.1.0], [fisaksen@baylibre.com])
 AM_INIT_AUTOMAKE([foreign color-tests subdir-objects dist-xz])
 AM_SILENT_RULES([yes])
 

@@ -1,5 +1,5 @@
-sbin_PROGRAMS = bLsched
-bLsched_SOURCES = src/bLsched.c
+sbin_PROGRAMS = blsched
+blsched_SOURCES = src/blsched.c
 
 docdir = $(datadir)/doc/@PACKAGE@
 doc_DATA = AUTHORS COPYING NEWS README.md
