@@ -663,6 +663,59 @@ static void add_existing_pids(void)
 	}
 }
 
+static int64_t get_cpu_maxfreq(int cpu)
+{
+	char fname[PATH_MAX];
+	int fd;
+	char buffer[4096];
+	int len;
+	int64_t value;
+
+	snprintf(fname, sizeof(fname), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
+
+	fd = open(fname, O_RDONLY);
+	if (fd < 0) {
+		//fprintf(stderr, "open(%s) failed: %s\n", fname, strerror(errno));
+		return -1;
+	}
+
+	len = read(fd, buffer, sizeof(buffer)-1);
+	close(fd);
+	if (len <= 0) {
+		fprintf(stderr, "read(%s) failed: %s\n", fname, strerror(errno));
+		return -1;
+	}
+	buffer[len-1] = 0; /* remove trailing '\n' */
+	return atol(buffer);
+}
+
+static void bl_autodetect(void)
+{
+	int cpu;
+	int64_t cpu_maxfreq[MAX_CPUS];
+	int64_t maxfreq, big_maxfreq = 0;
+
+	for (cpu = 0; cpu < MAX_CPUS; cpu++) {
+		maxfreq = get_cpu_maxfreq(cpu);
+		if (maxfreq > 0) {
+			cpu_maxfreq[cpu] = maxfreq;
+			if (maxfreq > big_maxfreq)
+				big_maxfreq = maxfreq;
+		} else {
+			cpu_maxfreq[cpu] = 0;
+		}
+	}
+	for (cpu = 0; cpu < MAX_CPUS; cpu++) {
+		maxfreq = cpu_maxfreq[cpu];
+		if (!maxfreq)
+			continue;
+		v_printf("CPU%d %ldMHz\n", cpu, maxfreq / 1000);
+		if (maxfreq >= big_maxfreq) {
+			CPU_SET(cpu, &big_cpuset);
+		}
+	}
+}
+
 static void usage(const char *prog)
 {
 	printf("Usage: %s\n", prog);
@@ -752,6 +805,10 @@ int main(int argc, char * const argv[])
 			usage(argv[0]);
 			break;
 		}
+	}
+
+	if (CPU_COUNT(&big_cpuset) == 0) {
+		bl_autodetect();
 	}
 
 	v_printf("big cpus %d/%d, up/down threshold %d%%/%d%%\n", CPU_COUNT(&big_cpuset), CPU_COUNT(&default_cpuset), up_threshold, down_threshold);
